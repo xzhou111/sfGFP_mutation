@@ -1,13 +1,14 @@
 ```bash
 mkdir 1.pdb 2.model 3.candidates 4.filter
 ```
-
-  1.pdb
-     ├── Exclusion_List.txt      #排除序列
-     ├── fixed_positions.txt     #固定区
-     ├── mutable_positions.txt   #可变区
-     ├── sfGFP.fa                #蛋白序列
-     └── sfGFP.pdb               #结构文件
+<br>
+<br>
+  1.pdb<br>
+     ├── Exclusion_List.txt      #排除序列<br>
+     ├── fixed_positions.txt     #固定区<br>
+     ├── mutable_positions.txt   #可变区<br>
+     ├── sfGFP.fa                #蛋白序列<br>
+     └── sfGFP.pdb               #结构文件<br>
     固定区原理:
       发色团SYG及附近60–72，保证能形成荧光发色团
       发色团口袋关键残基,保持亮度和局部环境
