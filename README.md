@@ -41,13 +41,10 @@ mkdir 1.pdb 2.model 3.candidates 4.filter
       batch_size ：每次同时生成几条序列，报显存不足或内存不足，就改小
       seed：设置随机种子，让结果可重复
       save_score：对每条序列的打分
-```
-    序列名称重命名
-```bash
+
+    #序列名称重命名
       awk 'BEGIN{n=0; keep=0} /^>/{if($0 ~ /^>sfGFP/){keep=0; next}else{n++; print ">sample"n; keep=1; next}} keep{print}'       3.candidates/01_proteinmpnn/seqs/sfGFP.fa > 3.candidates/01_proteinmpnn/sfGFP.fa
-```
-    对ProteinMPNN生成的 sfGFP 候选序列进行 ESM-2 打分，然后按分数从高到低排序，筛出 Top 候选序列
-```python
+    #对ProteinMPNN生成的 sfGFP 候选序列进行 ESM-2 打分，然后按分数从高到低排序，筛出 Top 候选序列
       python script/bin/02_esm2_score_top.py
 ```
 
