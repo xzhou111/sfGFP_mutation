@@ -50,10 +50,11 @@ mkdir 1.pdb 2.model 3.candidates 4.filter
 ```
 
   4.filter：
-    再通过pLDDT和RMSD进一步筛选<br>
-    pLDDT：结构预测置信度<br>
-    RMSD：候选结构与原始结构之间的平均空间偏差<br>
 ```bash
+    再通过pLDDT和RMSD进一步筛选
+    pLDDT：结构预测置信度
+    RMSD：候选结构与原始结构之间的平均空间偏差
+
     colabfold_batch 3.candidates/02_esm2_t33_score/Top_candidates.fa  4.filter/01_colabfol   #colabfold_batch预测蛋白结构(也可以通过alphafold3预测)
     python  script/bin/03_integrate_plddt_rmsd.py        #colabfold_batch预测结果
     python  script/bin/03_integrate_plddt_rmsd_af3.py    #alphafold3预测结果
