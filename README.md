@@ -49,7 +49,8 @@ mkdir 1.pdb 2.model 3.candidates 4.filter
       python script/bin/02_esm2_score_top.py
 ```
 
-  4.filter：再通过pLDDT和RMSD进一步筛选
+  4.filter：
+    再通过pLDDT和RMSD进一步筛选
     pLDDT：结构预测置信度
     RMSD：候选结构与原始结构之间的平均空间偏差
 ```bash
