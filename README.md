@@ -1,6 +1,7 @@
 ```bash
 mkdir 1.pdb 2.model 3.candidates 4.filter
-
+```
+```bash
   1.pdb
      ├── Exclusion_List.txt      #排除序列
      ├── fixed_positions.txt     #固定区
