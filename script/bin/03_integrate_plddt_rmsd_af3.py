@@ -1,0 +1,384 @@
+#!/usr/bin/env python3
+import os
+import glob
+import json
+import shutil
+from pathlib import Path
+from Bio import SeqIO
+from Bio.PDB import PDBParser, MMCIFParser, Superimposer
+
+# ============================================================
+# 输入文件
+# ============================================================
+
+REF_PDB = "1.pdb/sfGFP.pdb"
+WT_FA = "1.pdb/sfGFP.fa"
+CAND_FA = "3.candidates/02_esm2_t33_score/Top_candidates.fa"
+
+# AlphaFold3 官网下载结果目录
+# 目录结构应为：4.filter/01_alphafold3/sample1/fold_sample1_model_0.cif
+ALPHAFOLD3_DIR = "4.filter/01_alphafold3"
+
+# ============================================================
+# 输出目录
+# ============================================================
+
+OUT_DIR = "4.filter/02_out"
+OUT_ALL = f"{OUT_DIR}/integrated_plddt_rmsd_all.tsv"
+OUT_PASS = f"{OUT_DIR}/integrated_plddt_rmsd_pass.tsv"
+OUT_PASS_FA = f"{OUT_DIR}/pass_candidates.fa"
+OUT_PASS_STRUCTURE_DIR = f"{OUT_DIR}/pass_candidates_cif"
+
+# ============================================================
+# 筛选条件
+# ============================================================
+
+PLDDT_CUTOFF = 90.0
+RMSD_CUTOFF = 2
+
+# AlphaFold3 官网结果一般 model_0 是排在最前面的模型
+# MODEL_SELECT_MODE = "model_0"：只用 fold_sampleX_model_0.cif
+# MODEL_SELECT_MODE = "best_ranking_score"：从 0-4 中按 summary_confidences 的 ranking_score 选最高
+MODEL_SELECT_MODE = "model_0"
+
+# 如果只想保留 Top10，改成 10；不限制就用 None
+TOP_N = None
+
+
+def mkdir(path):
+    Path(path).mkdir(parents=True, exist_ok=True)
+
+
+def sample_sort_key(sample_id):
+    if sample_id.startswith("sample"):
+        n = sample_id.replace("sample", "")
+        if n.isdigit():
+            return int(n)
+    return sample_id
+
+
+def fmt(x):
+    if x is None:
+        return "NA"
+    return f"{x:.4f}"
+
+
+def get_structure_parser(structure_file):
+    """根据文件后缀自动选择 PDB 或 CIF 解析器。"""
+    structure_file = str(structure_file)
+    if structure_file.endswith(".cif") or structure_file.endswith(".mmcif"):
+        return MMCIFParser(QUIET=True)
+    return PDBParser(QUIET=True)
+
+
+def get_ca_atoms(structure_file):
+    """读取第一个 model、第一个 chain 的 CA 原子。"""
+    parser = get_structure_parser(structure_file)
+    structure = parser.get_structure("x", structure_file)
+
+    ca_atoms = []
+
+    for model in structure:
+        for chain in model:
+            for res in chain:
+                if res.id[0] == " " and "CA" in res:
+                    ca_atoms.append(res["CA"])
+            break
+        break
+
+    return ca_atoms
+
+
+def mean_plddt_from_structure(structure_file):
+    """
+    从 PDB/CIF 的 CA 原子 bfactor 中计算平均 pLDDT。
+    AlphaFold/AlphaFold3 的结构文件通常把 pLDDT 写在 bfactor 位置。
+    """
+    ca_atoms = get_ca_atoms(structure_file)
+
+    if len(ca_atoms) == 0:
+        return None
+
+    vals = [atom.get_bfactor() for atom in ca_atoms]
+    return sum(vals) / len(vals)
+
+
+def calc_ca_rmsd(ref_structure, query_structure):
+    """用第一个 chain 的 CA 原子计算 RMSD。"""
+    ref_atoms = get_ca_atoms(ref_structure)
+    query_atoms = get_ca_atoms(query_structure)
+
+    ref_len = len(ref_atoms)
+    query_len = len(query_atoms)
+
+    n = min(ref_len, query_len)
+
+    if n == 0:
+        return None, ref_len, query_len
+
+    ref_use = ref_atoms[:n]
+    query_use = query_atoms[:n]
+
+    sup = Superimposer()
+    sup.set_atoms(ref_use, query_use)
+
+    return sup.rms, ref_len, query_len
+
+
+def read_json_number(json_file, key):
+    """读取 json 顶层数字字段，比如 ranking_score。"""
+    if not os.path.exists(json_file):
+        return None
+
+    try:
+        with open(json_file) as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    value = data.get(key, None)
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    return None
+
+
+def find_af3_models(sample_id):
+    """
+    查找某个 sample 的 AlphaFold3 官网模型。
+    返回列表，每个元素包含：model_index、cif、summary_json、ranking_score。
+    """
+    sample_dir = os.path.join(ALPHAFOLD3_DIR, sample_id)
+    models = []
+
+    for cif in sorted(glob.glob(os.path.join(sample_dir, f"fold_{sample_id}_model_*.cif"))):
+        name = os.path.basename(cif)
+        model_index = name.replace(f"fold_{sample_id}_model_", "").replace(".cif", "")
+
+        summary_json = os.path.join(
+            sample_dir,
+            f"fold_{sample_id}_summary_confidences_{model_index}.json"
+        )
+
+        ranking_score = read_json_number(summary_json, "ranking_score")
+
+        models.append({
+            "model_index": model_index,
+            "cif": cif,
+            "summary_json": summary_json,
+            "ranking_score": ranking_score,
+        })
+
+    return models
+
+
+def find_selected_af3_model(sample_id):
+    """选择用于整合的 AlphaFold3 模型。"""
+    models = find_af3_models(sample_id)
+
+    if len(models) == 0:
+        return None
+
+    if MODEL_SELECT_MODE == "model_0":
+        for m in models:
+            if str(m["model_index"]) == "0":
+                return m
+        return models[0]
+
+    if MODEL_SELECT_MODE == "best_ranking_score":
+        models_with_score = [m for m in models if m["ranking_score"] is not None]
+        if len(models_with_score) > 0:
+            return sorted(models_with_score, key=lambda x: x["ranking_score"], reverse=True)[0]
+        return models[0]
+
+    raise ValueError("MODEL_SELECT_MODE 只能是 'model_0' 或 'best_ranking_score'")
+
+
+def count_mutations(wt_seq, seq):
+    if len(wt_seq) != len(seq):
+        return "NA"
+
+    n = 0
+    for a, b in zip(wt_seq, seq):
+        if a != b:
+            n += 1
+
+    return n
+
+
+# ============================================================
+# 主程序
+# ============================================================
+
+mkdir(OUT_DIR)
+
+# 每次重建通过筛选结构目录，避免旧文件残留
+if os.path.exists(OUT_PASS_STRUCTURE_DIR):
+    shutil.rmtree(OUT_PASS_STRUCTURE_DIR)
+mkdir(OUT_PASS_STRUCTURE_DIR)
+
+for f in [REF_PDB, WT_FA, CAND_FA]:
+    if not os.path.exists(f):
+        raise FileNotFoundError(f"找不到文件: {f}")
+
+if not os.path.exists(ALPHAFOLD3_DIR):
+    raise FileNotFoundError(f"找不到 AlphaFold3 目录: {ALPHAFOLD3_DIR}")
+
+wt_seq = str(next(SeqIO.parse(WT_FA, "fasta")).seq).strip().upper()
+
+seq_dict = {}
+for record in SeqIO.parse(CAND_FA, "fasta"):
+    seq_dict[record.id] = str(record.seq).strip().upper()
+
+sample_ids = sorted(seq_dict.keys(), key=sample_sort_key)
+
+results = []
+
+for sample_id in sample_ids:
+    seq = seq_dict[sample_id]
+    selected_model = find_selected_af3_model(sample_id)
+
+    if selected_model is None:
+        print(f"[警告] {sample_id} 没有找到 AlphaFold3 CIF：{ALPHAFOLD3_DIR}/{sample_id}/fold_{sample_id}_model_*.cif")
+        mean_plddt = None
+        rmsd = None
+        ref_ca_len = "NA"
+        query_ca_len = "NA"
+        model_index = "NA"
+        ranking_score = None
+        selected_structure = "NA"
+    else:
+        selected_structure = selected_model["cif"]
+        model_index = selected_model["model_index"]
+        ranking_score = selected_model["ranking_score"]
+        mean_plddt = mean_plddt_from_structure(selected_structure)
+        rmsd, ref_ca_len, query_ca_len = calc_ca_rmsd(REF_PDB, selected_structure)
+
+    mutation_count = count_mutations(wt_seq, seq)
+
+    pass_plddt = mean_plddt is not None and mean_plddt >= PLDDT_CUTOFF
+    pass_rmsd = rmsd is not None and rmsd <= RMSD_CUTOFF
+
+    final_status = "PASS" if pass_plddt and pass_rmsd else "FAIL"
+
+    fail_reason = []
+
+    if not pass_plddt:
+        fail_reason.append("low_pLDDT")
+
+    if not pass_rmsd:
+        fail_reason.append("high_RMSD")
+
+    if len(fail_reason) == 0:
+        fail_reason.append("PASS")
+
+    results.append({
+        "sample_id": sample_id,
+        "model_index": model_index,
+        "ranking_score": ranking_score,
+        "mean_pLDDT": mean_plddt,
+        "RMSD_CA": rmsd,
+        "mutation_count": mutation_count,
+        "ref_CA_len": ref_ca_len,
+        "query_CA_len": query_ca_len,
+        "pass_pLDDT": "YES" if pass_plddt else "NO",
+        "pass_RMSD": "YES" if pass_rmsd else "NO",
+        "final_status": final_status,
+        "fail_reason": ";".join(fail_reason),
+        "selected_structure": selected_structure,
+        "seq": seq,
+    })
+
+
+def sort_key(r):
+    status_rank = 0 if r["final_status"] == "PASS" else 1
+    plddt_sort = -(r["mean_pLDDT"] if r["mean_pLDDT"] is not None else -999)
+    rmsd_sort = r["RMSD_CA"] if r["RMSD_CA"] is not None else 999
+
+    return (
+        status_rank,
+        plddt_sort,
+        rmsd_sort,
+        sample_sort_key(r["sample_id"])
+    )
+
+
+results_sorted = sorted(results, key=sort_key)
+
+pass_results = [r for r in results_sorted if r["final_status"] == "PASS"]
+
+if TOP_N is not None:
+    pass_results = pass_results[:TOP_N]
+
+
+header = [
+    "sample_id",
+    "model_index",
+    "ranking_score",
+    "mean_pLDDT",
+    "RMSD_CA",
+    "mutation_count",
+    "ref_CA_len",
+    "query_CA_len",
+    "pass_pLDDT",
+    "pass_RMSD",
+    "final_status",
+    "fail_reason",
+    "selected_structure",
+]
+
+
+def write_table(outfile, rows):
+    with open(outfile, "w") as out:
+        out.write("\t".join(header) + "\n")
+
+        for r in rows:
+            row = [
+                r["sample_id"],
+                str(r["model_index"]),
+                fmt(r["ranking_score"]),
+                fmt(r["mean_pLDDT"]),
+                fmt(r["RMSD_CA"]),
+                str(r["mutation_count"]),
+                str(r["ref_CA_len"]),
+                str(r["query_CA_len"]),
+                r["pass_pLDDT"],
+                r["pass_RMSD"],
+                r["final_status"],
+                r["fail_reason"],
+                r["selected_structure"],
+            ]
+            out.write("\t".join(row) + "\n")
+
+
+write_table(OUT_ALL, results_sorted)
+write_table(OUT_PASS, pass_results)
+
+
+with open(OUT_PASS_FA, "w") as out:
+    for r in pass_results:
+        out.write(f">{r['sample_id']}\n")
+        seq = r["seq"]
+
+        for i in range(0, len(seq), 80):
+            out.write(seq[i:i+80] + "\n")
+
+
+for r in pass_results:
+    selected_structure = r["selected_structure"]
+
+    if selected_structure != "NA" and os.path.exists(selected_structure):
+        out_cif = os.path.join(OUT_PASS_STRUCTURE_DIR, f"{r['sample_id']}.cif")
+        shutil.copy(selected_structure, out_cif)
+
+
+print("完成")
+print("输出目录:", OUT_DIR)
+print("整合总表:", OUT_ALL)
+print("过滤表:", OUT_PASS)
+print("过滤后 fasta:", OUT_PASS_FA)
+print("过滤后 CIF 目录:", OUT_PASS_STRUCTURE_DIR)
+print("候选总数:", len(results))
+print("通过筛选数量:", len(pass_results))
+print(f"筛选条件: mean_pLDDT >= {PLDDT_CUTOFF}, RMSD_CA <= {RMSD_CUTOFF}")
+print("模型选择方式:", MODEL_SELECT_MODE)

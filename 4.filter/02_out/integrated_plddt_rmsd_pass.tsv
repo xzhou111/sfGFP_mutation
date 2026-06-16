@@ -1,0 +1,9 @@
+sample_id	model_index	ranking_score	mean_pLDDT	RMSD_CA	mutation_count	ref_CA_len	query_CA_len	pass_pLDDT	pass_RMSD	final_status	fail_reason	selected_structure
+sample7	0	0.9400	97.0105	1.0096	63	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample7/fold_sample7_model_0.cif
+sample3	0	0.9400	96.9997	0.9793	61	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample3/fold_sample3_model_0.cif
+sample5	0	0.9400	96.9288	1.0684	46	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample5/fold_sample5_model_0.cif
+sample1	0	0.9400	96.7816	1.0537	58	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample1/fold_sample1_model_0.cif
+sample8	0	0.9300	96.6492	0.9606	65	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample8/fold_sample8_model_0.cif
+sample6	0	0.9400	96.5496	0.9887	59	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample6/fold_sample6_model_0.cif
+sample2	0	0.9300	96.3220	0.8581	56	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample2/fold_sample2_model_0.cif
+sample4	0	0.9300	95.9440	1.0297	52	238	238	YES	YES	PASS	PASS	4.filter/01_alphafold3/sample4/fold_sample4_model_0.cif
