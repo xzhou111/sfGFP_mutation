@@ -7,12 +7,12 @@ mkdir 1.pdb 2.model 3.candidates 4.filter
      ├── mutable_positions.txt   #可变区
      ├── sfGFP.fa                #蛋白序列
      └── sfGFP.pdb               #结构文件
-```
-    固定区原理:<br>
-      发色团SYG及附近60–72，保证能形成荧光发色团<br>
-      发色团口袋关键残基,保持亮度和局部环境<br>
-      β-barrel 关键核心位点,保持桶状结构稳定<br>
 
+    固定区原理:
+      发色团SYG及附近60–72，保证能形成荧光发色团
+      发色团口袋关键残基,保持亮度和局部环境
+      β-barrel 关键核心位点,保持桶状结构稳定
+```
   2.model:按照下面网址，提前下载蛋白模型ESM，安装ProteinMPNN
   ```bash
     https://huggingface.co/facebook/esm2_t30_150M_UR50D
