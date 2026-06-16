@@ -1,4 +1,6 @@
+```bash
 mkdir 1.pdb 2.model 3.candidates 4.filter
+```
 
   1.pdb
      ├── Exclusion_List.txt      #排除序列
